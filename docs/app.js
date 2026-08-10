@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.4 seconds
+Wall time: 1 seconds
 Output:
 const API = window.ZOHO_PPT_API || "https://zoho-ppt-agent.techmajos6.workers.dev";
 const form = document.querySelector("#deck-form");
@@ -40,6 +40,11 @@ async function checkStatus() {
     connectButton.textContent = result.zoho === "connected" ? "Zoho connected" : "Connect Zoho";
     connectButton.disabled = result.zoho === "connected";
     if (result.zoho === "connected") setStep("connect", "done");
+    if (new URLSearchParams(window.location.search).get("zoho") === "connected") {
+      activityTitle.textContent = "Zoho Analytics connected";
+      activityCopy.textContent = "Describe the presentation, choose the period and scope, then generate an editable PowerPoint.";
+      history.replaceState({}, "", window.location.pathname);
+    }
   } catch (error) {
     setStatus("error", "Backend setup required");
     activityCopy.textContent = "The GitHub Pages interface is ready. Deploy and configure the companion Worker API to enable live presentation generation.";
