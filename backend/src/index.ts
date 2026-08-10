@@ -15,6 +15,9 @@ type DeckRequest = { prompt: string; workspace: string; period: string; audience
 type Job = { status: "queued" | "running" | "complete" | "failed"; stage: "analyze" | "story" | "render"; message: string; fileName?: string; downloadUrl?: string };
 type Row = Record<string, string>;
 type DeckData = { summary: Row[]; outlets: Row[]; menu: Row[]; risks: Row[]; procurement: Row[]; period: string; generatedAt: string };
+type ChatRequest = { message: string; period: string; conversationId?: string };
+type ChatTurn = { role: "user" | "assistant"; content: string };
+type ChatAnswer = { answer: string; highlights?: string[]; view?: "summary" | "outlets" | "menu" | "risks" | "procurement" };
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin");
@@ -168,6 +171,45 @@ async function loadDeckData(env: Env, period: string): Promise<DeckData> {
   return { summary: result.summary ?? [], outlets: result.outlets ?? [], menu: result.menu ?? [], risks: result.risks ?? [], procurement: result.procurement ?? [], period, generatedAt: new Date().toISOString() };
 }
 
+function validateChatRequest(value: unknown): ChatRequest {
+  if (!value || typeof value !== "object") throw new Error("Invalid request.");
+  const body = value as Partial<ChatRequest>;
+  const message = String(body.message ?? "").trim();
+  if (message.length < 3 || message.length > 1500) throw new Error("Question must be between 3 and 1,500 characters.");
+  periodBounds(String(body.period ?? ""));
+  return { message, period: String(body.period), conversationId: body.conversationId ? String(body.conversationId).slice(0, 80) : undefined };
+}
+
+function aiText(result: unknown): string {
+  if (result && typeof result === "object" && "response" in result && typeof (result as { response?: unknown }).response === "string") return (result as { response: string }).response;
+  throw new Error("The AI model returned an invalid response.");
+}
+
+async function answerQuestion(env: Env, request: ChatRequest, session: string): Promise<{ conversationId: string; answer: ChatAnswer; rows: Row[]; columns: string[]; period: string }> {
+  const conversationId = request.conversationId ?? crypto.randomUUID();
+  const historyKey = `chat:${session}:${conversationId}`;
+  const history = (await env.PPT_AGENT_JOBS.get<ChatTurn[]>(historyKey, "json") ?? []).slice(-6);
+  const data = await loadDeckData(env, request.period);
+  const evidence = { summary: data.summary, outlets: data.outlets.slice(0, 12), menu: data.menu.slice(0, 12), risks: data.risks.slice(0, 12), procurement: data.procurement.slice(0, 10) };
+  const prompt = `You are the ABNAH executive analytics agent. Answer only from the supplied Zoho Analytics evidence. Distinguish monthly sales activity from latest-complete supply/procurement position. Never invent causes or values. If evidence is insufficient, say so. Use concise executive language and Indian rupee formatting. Return valid JSON with keys answer (string), highlights (array of up to 5 strings), and view (one of summary,outlets,menu,risks,procurement).\nReporting period: ${request.period}\nRecent conversation: ${JSON.stringify(history)}\nQuestion: ${request.message}\nGoverned evidence: ${JSON.stringify(evidence)}`;
+  const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+    prompt,
+    max_tokens: 900,
+    temperature: 0.15,
+    response_format: { type: "json_object" },
+  });
+  let answer: ChatAnswer;
+  try { answer = JSON.parse(aiText(result)) as ChatAnswer; }
+  catch { answer = { answer: aiText(result), highlights: [], view: "summary" }; }
+  if (!answer.answer || typeof answer.answer !== "string") throw new Error("The AI response could not be validated.");
+  const view = ["summary", "outlets", "menu", "risks", "procurement"].includes(answer.view ?? "") ? answer.view! : "summary";
+  const rows = evidence[view].slice(0, 10);
+  const columns = rows.length ? Object.keys(rows[0]).slice(0, 7) : [];
+  const nextHistory: ChatTurn[] = [...history, { role: "user", content: request.message }, { role: "assistant", content: answer.answer }].slice(-8);
+  await env.PPT_AGENT_JOBS.put(historyKey, JSON.stringify(nextHistory), { expirationTtl: SESSION_TTL });
+  return { conversationId, answer: { ...answer, view }, rows, columns, period: request.period };
+}
+
 const n = (value: string | undefined) => Number(value || 0);
 const money = (value: number) => `â‚¹${Math.abs(value) >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}m` : Math.abs(value) >= 1000 ? `${(value / 1000).toFixed(0)}k` : value.toFixed(0)}`;
 
@@ -218,6 +260,7 @@ export default {
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
     if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
     if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
+    if(request.method==="POST"&&url.pathname==="/api/chat"){const session=readCookie(request,SESSION_COOKIE);if(!session||!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before asking questions."},401);try{const body=validateChatRequest(await request.json());return json(request,await answerQuestion(env,body,session));}catch(error){console.error(JSON.stringify({event:"chat_failed",message:error instanceof Error?error.message:"unknown_error"}));return json(request,{message:error instanceof Error?error.message:"Question could not be answered."},400);}}
     const download=url.pathname.match(/^\/api\/decks\/([^/]+)\/download$/);if(request.method==="GET"&&download){if(!(await hasSession(request,env)))return json(request,{message:"Authorization required."},401);const id=download[1];const object=await env.PPT_AGENT_JOBS.getWithMetadata<{contentType?:string;fileName?:string}>(`file:${id}`,"arrayBuffer");if(!object.value)return json(request,{message:"Presentation file not found or expired."},404);return new Response(object.value,{headers:{...corsHeaders(request),"Content-Type":object.metadata?.contentType??PPTX_MIME,"Content-Disposition":`attachment; filename="${object.metadata?.fileName??"presentation.pptx"}`,"Cache-Control":"private, no-store"}});}
     const status=url.pathname.match(/^\/api\/decks\/([^/]+)$/);if(request.method==="GET"&&status){if(!(await hasSession(request,env)))return json(request,{message:"Authorization required."},401);const job=await env.PPT_AGENT_JOBS.get<Job>(`job:${status[1]}`,"json");return job?json(request,job):json(request,{message:"Deck job not found or expired."},404);}
     return json(request,{message:"Route not found."},404);
