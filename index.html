@@ -35,6 +35,22 @@
         </aside>
       </section>
 
+      <section class="chat-panel panel" id="analytics-chat">
+        <div class="section-head">
+          <div><span class="eyebrow">ASK LIVE ZOHO DATA</span><h2>Talk to your analytics agent</h2></div>
+          <button id="new-chat-button" class="text-button" type="button">New conversation</button>
+        </div>
+        <div id="chat-messages" class="chat-messages" aria-live="polite">
+          <div class="chat-message assistant"><b>Analytics agent</b><p>Ask about outlet performance, menu margin, supply risk, procurement exposure, or request a comparison for the selected reporting month.</p></div>
+        </div>
+        <div id="evidence-table" class="evidence-table" hidden></div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="chat-input" rows="2" required placeholder="Example: Which outlets need management attention in January 2026?"></textarea>
+          <button id="ask-button" class="button primary" type="submit">Ask Zoho <span>â†’</span></button>
+        </form>
+        <div class="chat-actions"><button id="use-for-deck" class="button ghost" type="button" hidden>Use this question for a PowerPoint</button></div>
+      </section>
+
       <section class="workspace-grid">
         <article class="composer panel">
           <div class="section-head">
