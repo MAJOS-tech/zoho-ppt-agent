@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 1.1 seconds
+Output:
 <!doctype html>
 <html lang="en">
   <head>
@@ -25,7 +28,8 @@
         <div>
           <span class="eyebrow">LIVE ANALYTICS TO EXECUTIVE STORY</span>
           <h1>Ask for the deck.<br /><em>Get the decision.</em></h1>
-          <p>Turn governed Zoho Analytics data into editable, executive-ready PowerPoint presentations with validated metrics, clear actions and source lineage.</p>
+          <p>Ask for the leadership story you need. The agent retrieves live Zoho evidence, validates the reporting period, and returns an editable PowerPoint.</p>
+          <div style="margin-top:22px"><a class="button primary" href="#deck-form">Start creating a presentation <span>â†’</span></a></div>
         </div>
         <aside class="hero-proof">
           <span>DEFAULT PROFILE</span>
@@ -42,11 +46,11 @@
           </div>
 
           <form id="deck-form">
-            <label class="prompt-label" for="prompt">Your request</label>
+            <label class="prompt-label" for="prompt">Ask the presentation agent</label>
             <textarea id="prompt" rows="7" required>Create a January 2026 executive supply-chain review for ABNAH. Include outlet performance, inventory exposure, procurement risk, menu items at risk and a prioritized action plan.</textarea>
 
             <div class="fields">
-              <label>Workspace<select id="workspace"><option value="abnah">ABNAH · ABG-GIT-Workspace</option></select></label>
+              <label>Workspace<select id="workspace"><option value="abnah">ABNAH Â· ABG-GIT-Workspace</option></select></label>
               <label>Reporting period<input id="period" type="month" value="2026-01" /></label>
               <label>Audience<select id="audience"><option>Executive Committee</option><option>CFO</option><option>Supply Chain Leadership</option><option>Outlet Operations</option></select></label>
               <label>Slides<select id="slides"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
@@ -63,8 +67,8 @@
             </fieldset>
 
             <div class="submit-row">
-              <div><b>Editable PowerPoint</b><small>Live Zoho data · metric validation · visual QA</small></div>
-              <button id="generate-button" class="button primary" type="submit">Generate presentation <span>→</span></button>
+              <div><b>Editable PowerPoint</b><small>Live Zoho data Â· metric validation Â· visual QA</small></div>
+              <button id="generate-button" class="button primary" type="submit">Generate presentation <span>â†’</span></button>
             </div>
           </form>
         </article>
@@ -102,8 +106,9 @@
         <div><b>Source-backed slides</b><span>Every metric carries workspace, view and period lineage.</span></div>
       </section>
 
-      <footer>MAJOS Tech · Zoho PPT Agent · Private analytics workspace</footer>
+      <footer>MAJOS Tech Â· Zoho PPT Agent Â· Private analytics workspace</footer>
     </main>
     <script src="./app.js"></script>
   </body>
 </html>
+
