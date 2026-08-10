@@ -1,0 +1,26 @@
+Exit code: 0
+Wall time: 0.4 seconds
+Output:
+{
+  "$schema": "../../cloudflare-tools/node_modules/wrangler/config-schema.json",
+  "name": "zoho-ppt-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "compatibility_flags": ["nodejs_compat"],
+  "secrets": {
+    "required": ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "PPT_AGENT_ZOHO_TOKENS",
+      "id": "9b9f632add3e47a7a2fbffa235ea0822"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
+
