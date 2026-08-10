@@ -31,6 +31,19 @@ Codex follows [AGENTS.md](AGENTS.md), uses the workspace catalog in [config/work
 
 More examples are available in [prompts/examples.md](prompts/examples.md).
 
+## GitHub Pages interface
+
+The `docs/` directory contains the static GitHub Pages UX, following the same
+frontend/deployment pattern as the MAJOS Tech ABNAH control tower. It provides
+a conversational request composer, ABNAH workspace and period controls,
+presentation scope choices, generation progress, and a PowerPoint download
+state.
+
+The interface expects a companion API at
+`https://zoho-ppt-agent.techmajos6.workers.dev`. Until that Worker is deployed
+and configured, the page safely reports `Backend setup required` and does not
+send credentials from browser code.
+
 ## Security
 
 - Keep the repository private when business metrics or generated decks are committed.
