@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.4 seconds
+Output:
 const API = window.ZOHO_PPT_API || "https://zoho-ppt-agent.techmajos6.workers.dev";
 const form = document.querySelector("#deck-form");
 const statusDot = document.querySelector("#status-dot");
@@ -43,7 +46,7 @@ async function checkStatus() {
   }
 }
 
-connectButton.addEventListener("click", () => { window.location.href = `${API}/auth/zoho`; });
+connectButton.addEventListener("click", () => { window.location.href = `${API}/auth/zoho/start`; });
 document.querySelector("#clear-button").addEventListener("click", () => { document.querySelector("#prompt").value = ""; document.querySelector("#prompt").focus(); });
 document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => { document.querySelector("#prompt").value = button.dataset.prompt; document.querySelector("#prompt").focus(); }));
 
@@ -51,7 +54,7 @@ form.addEventListener("submit", async event => {
   event.preventDefault();
   downloadCard.hidden = true;
   generateButton.disabled = true;
-  generateButton.textContent = "Creating presentation…";
+  generateButton.textContent = "Creating presentationâ€¦";
   const body = {
     prompt: document.querySelector("#prompt").value.trim(),
     workspace: document.querySelector("#workspace").value,
@@ -70,7 +73,7 @@ form.addEventListener("submit", async event => {
     activityCopy.textContent = error.message;
   } finally {
     generateButton.disabled = false;
-    generateButton.innerHTML = "Generate presentation <span>→</span>";
+    generateButton.innerHTML = "Generate presentation <span>â†’</span>";
   }
 });
 
@@ -92,3 +95,4 @@ async function pollJob(jobId) {
 }
 
 checkStatus();
+
