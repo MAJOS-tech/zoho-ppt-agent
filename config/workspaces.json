@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "abnah": {
+      "organizationName": "Aditya Birla Management Corporation Pvt. Limited",
+      "organizationId": "60026100833",
+      "workspaceName": "ABG-GIT-Workspace",
+      "workspaceId": "333330000004099001",
+      "preferredFolder": "ABNAH meeting Demo",
+      "preferredFolderId": "333330000004410191",
+      "dashboardName": "DB_01_ABNAH_SCM_Control_Tower",
+      "notes": "Verify IDs and metadata through Zoho before every analysis. Do not use ZMF_TEST_ABNAH synthetic calibration objects for production reporting."
+    }
+  }
+}
