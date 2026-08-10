@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.4 seconds
+Wall time: 0.8 seconds
 Output:
 {
   "$schema": "../../cloudflare-tools/node_modules/wrangler/config-schema.json",
@@ -16,8 +16,17 @@ Output:
     {
       "binding": "PPT_AGENT_ZOHO_TOKENS",
       "id": "9b9f632add3e47a7a2fbffa235ea0822"
+    },
+    {
+      "binding": "PPT_AGENT_JOBS",
+      "id": "d5321392be194b74b2c5227b8743451f"
     }
   ],
+  "vars": {
+    "ZOHO_ANALYTICS_ORG_ID": "60026100833",
+    "ZOHO_ANALYTICS_WORKSPACE_ID": "333330000004099001",
+    "ZOHO_ANALYTICS_BASE_URL": "https://analyticsapi.zoho.in"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
