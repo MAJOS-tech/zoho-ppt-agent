@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 1 seconds
-Output:
 const API = window.ZOHO_PPT_API || "https://zoho-ppt-agent.techmajos6.workers.dev";
 const form = document.querySelector("#deck-form");
 const statusDot = document.querySelector("#status-dot");
@@ -10,6 +7,14 @@ const generateButton = document.querySelector("#generate-button");
 const activityTitle = document.querySelector("#activity-title");
 const activityCopy = document.querySelector("#activity-copy");
 const downloadCard = document.querySelector("#download-card");
+const chatForm = document.querySelector("#chat-form");
+const chatInput = document.querySelector("#chat-input");
+const chatMessages = document.querySelector("#chat-messages");
+const evidenceTable = document.querySelector("#evidence-table");
+const askButton = document.querySelector("#ask-button");
+const useForDeck = document.querySelector("#use-for-deck");
+let conversationId = sessionStorage.getItem("zohoConversationId") || "";
+let lastQuestion = "";
 
 function setStatus(mode, text) {
   statusDot.className = `status-dot ${mode === "live" ? "live" : mode === "error" ? "error" : ""}`;
@@ -52,6 +57,34 @@ async function checkStatus() {
 }
 
 connectButton.addEventListener("click", () => { window.location.href = `${API}/auth/zoho/start`; });
+document.querySelector("#new-chat-button").addEventListener("click", () => { conversationId = ""; sessionStorage.removeItem("zohoConversationId"); chatMessages.innerHTML = '<div class="chat-message assistant"><b>Analytics agent</b><p>New conversation started. What would you like to know?</p></div>'; evidenceTable.hidden = true; useForDeck.hidden = true; });
+useForDeck.addEventListener("click", () => { document.querySelector("#prompt").value = lastQuestion; document.querySelector("#deck-form").scrollIntoView({ behavior: "smooth" }); });
+
+function addChat(role, text, highlights = []) {
+  const item = document.createElement("div"); item.className = `chat-message ${role}`;
+  const label = document.createElement("b"); label.textContent = role === "user" ? "You" : "Analytics agent";
+  const copy = document.createElement("p"); copy.textContent = text; item.append(label, copy);
+  if (highlights.length) { const list = document.createElement("ul"); list.className = "chat-highlights"; highlights.forEach(value => { const li = document.createElement("li"); li.textContent = value; list.append(li); }); item.append(list); }
+  chatMessages.append(item); chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function showEvidence(columns, rows) {
+  if (!columns?.length || !rows?.length) { evidenceTable.hidden = true; return; }
+  const table = document.createElement("table"), head = document.createElement("thead"), hr = document.createElement("tr");
+  columns.forEach(column => { const th = document.createElement("th"); th.textContent = column.replaceAll("_", " "); hr.append(th); }); head.append(hr); table.append(head);
+  const body = document.createElement("tbody"); rows.forEach(row => { const tr = document.createElement("tr"); columns.forEach(column => { const td = document.createElement("td"); td.textContent = row[column] ?? ""; tr.append(td); }); body.append(tr); }); table.append(body);
+  evidenceTable.replaceChildren(table); evidenceTable.hidden = false;
+}
+
+chatForm.addEventListener("submit", async event => {
+  event.preventDefault(); const message = chatInput.value.trim(); if (!message) return;
+  lastQuestion = message; addChat("user", message); chatInput.value = ""; askButton.disabled = true; askButton.textContent = "Analyzingâ€¦";
+  try {
+    const result = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, period: document.querySelector("#period").value, conversationId: conversationId || undefined }) });
+    conversationId = result.conversationId; sessionStorage.setItem("zohoConversationId", conversationId); addChat("assistant", result.answer.answer, result.answer.highlights || []); showEvidence(result.columns, result.rows); useForDeck.hidden = false;
+  } catch (error) { addChat("assistant", error.message); if (error.status === 401) setStatus("waiting", "Connect Zoho"); }
+  finally { askButton.disabled = false; askButton.innerHTML = "Ask Zoho <span>â†’</span>"; }
+});
 document.querySelector("#clear-button").addEventListener("click", () => { document.querySelector("#prompt").value = ""; document.querySelector("#prompt").focus(); });
 document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => { document.querySelector("#prompt").value = button.dataset.prompt; document.querySelector("#prompt").focus(); }));
 
