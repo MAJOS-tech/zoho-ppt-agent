@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Create executive PowerPoint presentations from live Zoho Analytics data." />
+    <title>Zoho PPT Agent | MAJOS Tech</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Zoho PPT Agent home">
+          <span class="brand-mark">M</span>
+          <span><b>MAJOS TECH</b><small>Zoho PPT Agent</small></span>
+        </a>
+        <div class="connection">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text">Checking agent</span>
+          <button id="connect-button" class="button ghost" type="button">Connect Zoho</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <span class="eyebrow">LIVE ANALYTICS TO EXECUTIVE STORY</span>
+          <h1>Ask for the deck.<br /><em>Get the decision.</em></h1>
+          <p>Turn governed Zoho Analytics data into editable, executive-ready PowerPoint presentations with validated metrics, clear actions and source lineage.</p>
+        </div>
+        <aside class="hero-proof">
+          <span>DEFAULT PROFILE</span>
+          <strong>ABNAH</strong>
+          <small>ABG-GIT-Workspace<br />ABNAH meeting Demo</small>
+        </aside>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="composer panel">
+          <div class="section-head">
+            <div><span class="eyebrow">CREATE A PRESENTATION</span><h2>What should leadership know?</h2></div>
+            <button id="clear-button" class="text-button" type="button">Clear</button>
+          </div>
+
+          <form id="deck-form">
+            <label class="prompt-label" for="prompt">Your request</label>
+            <textarea id="prompt" rows="7" required>Create a January 2026 executive supply-chain review for ABNAH. Include outlet performance, inventory exposure, procurement risk, menu items at risk and a prioritized action plan.</textarea>
+
+            <div class="fields">
+              <label>Workspace<select id="workspace"><option value="abnah">ABNAH · ABG-GIT-Workspace</option></select></label>
+              <label>Reporting period<input id="period" type="month" value="2026-01" /></label>
+              <label>Audience<select id="audience"><option>Executive Committee</option><option>CFO</option><option>Supply Chain Leadership</option><option>Outlet Operations</option></select></label>
+              <label>Slides<select id="slides"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
+            </div>
+
+            <fieldset>
+              <legend>Include</legend>
+              <label><input type="checkbox" name="scope" value="executive_summary" checked /> Executive summary</label>
+              <label><input type="checkbox" name="scope" value="outlets" checked /> Outlet performance</label>
+              <label><input type="checkbox" name="scope" value="inventory" checked /> Inventory risk</label>
+              <label><input type="checkbox" name="scope" value="procurement" checked /> Procurement</label>
+              <label><input type="checkbox" name="scope" value="menu" checked /> Menu risk</label>
+              <label><input type="checkbox" name="scope" value="actions" checked /> Actions & owners</label>
+            </fieldset>
+
+            <div class="submit-row">
+              <div><b>Editable PowerPoint</b><small>Live Zoho data · metric validation · visual QA</small></div>
+              <button id="generate-button" class="button primary" type="submit">Generate presentation <span>→</span></button>
+            </div>
+          </form>
+        </article>
+
+        <aside class="side-column">
+          <article class="panel progress-panel">
+            <span class="eyebrow">AGENT ACTIVITY</span>
+            <h2 id="activity-title">Ready for a request</h2>
+            <p id="activity-copy">The agent will inspect Zoho metadata, retrieve the requested period, validate KPI grains, build the story and render every slide.</p>
+            <ol id="progress-list">
+              <li data-step="connect"><span>1</span><div><b>Connect</b><small>Authorize Zoho Analytics</small></div></li>
+              <li data-step="analyze"><span>2</span><div><b>Analyze</b><small>Retrieve and reconcile metrics</small></div></li>
+              <li data-step="story"><span>3</span><div><b>Structure</b><small>Build the executive claim spine</small></div></li>
+              <li data-step="render"><span>4</span><div><b>Render & QA</b><small>Create editable slides and validate</small></div></li>
+            </ol>
+            <div id="download-card" class="download-card" hidden>
+              <span>DECK READY</span>
+              <b id="download-name">ABNAH-Executive-Review.pptx</b>
+              <a id="download-link" class="button primary" href="#">Download PowerPoint</a>
+            </div>
+          </article>
+
+          <article class="panel examples">
+            <span class="eyebrow">TRY A STARTER</span>
+            <button type="button" data-prompt="Create a monthly executive supply-chain review with commercial performance, risk exposure and the five most important actions.">Monthly executive review</button>
+            <button type="button" data-prompt="Compare ABNAH outlets by sales, margin, inventory exposure, overdue procurement and consumption leakage. Rank management priorities.">Outlet performance</button>
+            <button type="button" data-prompt="Show the top menu items at risk, their critical ingredients, affected outlets, monetary exposure and required recovery actions.">Menu items at risk</button>
+          </article>
+        </aside>
+      </section>
+
+      <section class="trust-strip">
+        <div><b>Read-only by default</b><span>Zoho data is never modified during presentation creation.</span></div>
+        <div><b>Point-in-time discipline</b><span>Period totals are separated from month-end positions.</span></div>
+        <div><b>Source-backed slides</b><span>Every metric carries workspace, view and period lineage.</span></div>
+      </section>
+
+      <footer>MAJOS Tech · Zoho PPT Agent · Private analytics workspace</footer>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>
