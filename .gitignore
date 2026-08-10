@@ -1,0 +1,17 @@
+# Generated presentations and local scratch
+output/*
+!output/.gitkeep
+outputs/
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
