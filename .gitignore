@@ -1,12 +1,21 @@
+Exit code: 0
+Wall time: 0.8 seconds
+Output:
 # Generated presentations and local scratch
 output/*
 !output/.gitkeep
 outputs/
+node_modules/
+backend/node_modules/
+backend/worker-configuration.d.ts
 
 # Credentials and local environment
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 *.pem
 *.key
 
@@ -15,3 +24,4 @@ outputs/
 Thumbs.db
 .vscode/
 .idea/
+
