@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.8 seconds
-Output:
 import PptxGenJS from "pptxgenjs";
 
 const FRONTEND_ORIGIN = "https://majos-tech.github.io";
@@ -8,7 +5,9 @@ const FRONTEND_URL = "https://majos-tech.github.io/zoho-ppt-agent/";
 const ZOHO_ACCOUNTS_URL = "https://accounts.zoho.in";
 const ZOHO_SCOPE = "ZohoAnalytics.data.read";
 const OAUTH_STATE_COOKIE = "ppt_agent_zoho_state";
+const SESSION_COOKIE = "ppt_agent_session";
 const JOB_TTL = 60 * 60 * 24;
+const SESSION_TTL = 60 * 60 * 24 * 7;
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 type ZohoTokenResponse = { access_token?: string; refresh_token?: string; expires_in?: number; error?: string };
@@ -43,6 +42,15 @@ function readCookie(request: Request, name: string): string | null {
 
 function stateCookie(value: string, maxAge: number): string {
   return `${OAUTH_STATE_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+function sessionCookie(value: string, maxAge: number): string {
+  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${maxAge}`;
+}
+
+async function hasSession(request: Request, env: Env): Promise<boolean> {
+  const session = readCookie(request, SESSION_COOKIE);
+  return Boolean(session && await env.PPT_AGENT_JOBS.get(`session:${session}`));
 }
 
 function redirect(location: string, cookies: string[] = []): Response {
@@ -206,12 +214,12 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url=new URL(request.url);
     if(request.method==="OPTIONS"){const origin=request.headers.get("Origin");if(origin&&origin!==FRONTEND_ORIGIN)return json(request,{message:"Origin not allowed."},403);return new Response(null,{status:204,headers:corsHeaders(request)});}
-    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh?"connected":"not_connected",generation:"ready",version:"1.0.0"});}
+    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.0.1"});}
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
-    if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0)]);}
-    if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token")))return json(request,{message:"Connect Zoho before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
-    const download=url.pathname.match(/^\/api\/decks\/([^/]+)\/download$/);if(request.method==="GET"&&download){const id=download[1];const object=await env.PPT_AGENT_JOBS.getWithMetadata<{contentType?:string;fileName?:string}>(`file:${id}`,"arrayBuffer");if(!object.value)return json(request,{message:"Presentation file not found or expired."},404);return new Response(object.value,{headers:{...corsHeaders(request),"Content-Type":object.metadata?.contentType??PPTX_MIME,"Content-Disposition":`attachment; filename="${object.metadata?.fileName??"presentation.pptx"}`,"Cache-Control":"private, no-store"}});}
-    const status=url.pathname.match(/^\/api\/decks\/([^/]+)$/);if(request.method==="GET"&&status){const job=await env.PPT_AGENT_JOBS.get<Job>(`job:${status[1]}`,"json");return job?json(request,job):json(request,{message:"Deck job not found or expired."},404);}
+    if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
+    if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
+    const download=url.pathname.match(/^\/api\/decks\/([^/]+)\/download$/);if(request.method==="GET"&&download){if(!(await hasSession(request,env)))return json(request,{message:"Authorization required."},401);const id=download[1];const object=await env.PPT_AGENT_JOBS.getWithMetadata<{contentType?:string;fileName?:string}>(`file:${id}`,"arrayBuffer");if(!object.value)return json(request,{message:"Presentation file not found or expired."},404);return new Response(object.value,{headers:{...corsHeaders(request),"Content-Type":object.metadata?.contentType??PPTX_MIME,"Content-Disposition":`attachment; filename="${object.metadata?.fileName??"presentation.pptx"}`,"Cache-Control":"private, no-store"}});}
+    const status=url.pathname.match(/^\/api\/decks\/([^/]+)$/);if(request.method==="GET"&&status){if(!(await hasSession(request,env)))return json(request,{message:"Authorization required."},401);const job=await env.PPT_AGENT_JOBS.get<Job>(`job:${status[1]}`,"json");return job?json(request,job):json(request,{message:"Deck job not found or expired."},404);}
     return json(request,{message:"Route not found."},404);
   }
 } satisfies ExportedHandler<Env>;
