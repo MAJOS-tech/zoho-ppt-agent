@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.6 seconds
-Output:
 # Zoho PPT Agent
 
 A lightweight Codex workspace for creating executive PowerPoint presentations from Zoho Analytics through natural-language requests.
@@ -10,7 +7,7 @@ The repository does not contain Zoho credentials, MCP URLs, OAuth tokens, or Ope
 ## What it does
 
 - Discovers Zoho Analytics organizations, workspaces, folders, tables, query tables, reports, and dashboards.
-- Converts questions such as â€œCreate a January supply-chain executive deckâ€ into a read-only analysis plan.
+- Converts questions such as “Create a January supply-chain executive deck” into a read-only analysis plan.
 - Validates reporting periods, grains, month-end versus period totals, units, and source lineage.
 - Builds editable `.pptx` presentations using the Codex Presentations workflow.
 - Renders every slide for visual QA before delivery.
@@ -45,13 +42,12 @@ More examples are available in [prompts/examples.md](prompts/examples.md).
 
 ```text
 zoho-ppt-agent/
-â”œâ”€â”€ AGENTS.md
-â”œâ”€â”€ README.md
-â”œâ”€â”€ config/
-â”‚   â””â”€â”€ workspaces.json
-â”œâ”€â”€ prompts/
-â”‚   â””â”€â”€ examples.md
-â””â”€â”€ output/
-    â””â”€â”€ .gitkeep
+├── AGENTS.md
+├── README.md
+├── config/
+│   └── workspaces.json
+├── prompts/
+│   └── examples.md
+└── output/
+    └── .gitkeep
 ```
-
