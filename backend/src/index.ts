@@ -120,7 +120,9 @@ async function exportSql(env: Env, token: string, sqlQuery: string): Promise<str
     throw new Error(`Zoho export could not start (${response.status}).`);
   }
   if (!jobId) throw new Error("Zoho export queue is busy.");
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  // Keep a hard ceiling so a slow Zoho export cannot exhaust the Worker's
+  // per-invocation subrequest allowance. Chat requests load at most two views.
+  for (let attempt = 0; attempt < 16; attempt += 1) {
     const response = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/exportjobs/${jobId}`);
     if (!response.ok) throw new Error("Zoho export status failed.");
     const result = await response.json<{ data: { jobCode: string } }>();
@@ -130,7 +132,7 @@ async function exportSql(env: Env, token: string, sqlQuery: string): Promise<str
       return download.text();
     }
     if (["1003", "1005"].includes(result.data.jobCode)) throw new Error("Zoho export job failed.");
-    await delay(750);
+    await delay(1000);
   }
   throw new Error("Zoho export timed out.");
 }
@@ -171,6 +173,36 @@ async function loadDeckData(env: Env, period: string): Promise<DeckData> {
   return { summary: result.summary ?? [], outlets: result.outlets ?? [], menu: result.menu ?? [], risks: result.risks ?? [], procurement: result.procurement ?? [], period, generatedAt: new Date().toISOString() };
 }
 
+type EvidenceView = "summary" | "outlets" | "menu" | "risks" | "procurement";
+
+function chatEvidenceViews(message: string): EvidenceView[] {
+  const text = message.toLowerCase();
+  const wantsOutlet = /outlet|store|location|branch/.test(text);
+  const wantsRisk = /risk|shortage|expiry|expired|exposure|stock/.test(text);
+  const wantsMenu = /menu|dish|recipe|food item|item margin/.test(text);
+  const wantsProcurement = /procurement|vendor|supplier|purchase order|\bpo\b|overdue/.test(text);
+  const wantsSummary = /summary|overall|total|business|company/.test(text);
+
+  if (wantsOutlet && wantsRisk) return ["outlets", "risks"];
+  if (wantsMenu && wantsRisk) return ["menu", "risks"];
+  if (wantsProcurement) return wantsRisk ? ["procurement", "risks"] : ["procurement", "summary"];
+  if (wantsMenu) return ["menu", "summary"];
+  if (wantsRisk) return ["risks", "summary"];
+  if (wantsOutlet) return ["outlets", "summary"];
+  if (wantsSummary) return ["summary", "outlets"];
+  return ["summary", "outlets"];
+}
+
+async function loadChatEvidence(env: Env, period: string, message: string): Promise<Record<EvidenceView, Row[]>> {
+  const token = await accessToken(env);
+  const sql = queries(period);
+  const selected = chatEvidenceViews(message);
+  const loaded = await Promise.all(selected.map(async (view) => [view, csvRows(await exportSql(env, token, sql[view]))] as const));
+  const evidence: Record<EvidenceView, Row[]> = { summary: [], outlets: [], menu: [], risks: [], procurement: [] };
+  for (const [view, rows] of loaded) evidence[view] = rows;
+  return evidence;
+}
+
 function validateChatRequest(value: unknown): ChatRequest {
   if (!value || typeof value !== "object") throw new Error("Invalid request.");
   const body = value as Partial<ChatRequest>;
@@ -200,8 +232,8 @@ async function answerQuestion(env: Env, request: ChatRequest, session: string): 
   const conversationId = request.conversationId ?? crypto.randomUUID();
   const historyKey = `chat:${session}:${conversationId}`;
   const history = (await env.PPT_AGENT_JOBS.get<ChatTurn[]>(historyKey, "json") ?? []).slice(-6);
-  const data = await loadDeckData(env, request.period);
-  const evidence = { summary: data.summary, outlets: data.outlets.slice(0, 12), menu: data.menu.slice(0, 12), risks: data.risks.slice(0, 12), procurement: data.procurement.slice(0, 10) };
+  const loaded = await loadChatEvidence(env, request.period, request.message);
+  const evidence = { summary: loaded.summary, outlets: loaded.outlets.slice(0, 12), menu: loaded.menu.slice(0, 12), risks: loaded.risks.slice(0, 12), procurement: loaded.procurement.slice(0, 10) };
   const prompt = `You are the ABNAH executive analytics agent. Answer only from the supplied Zoho Analytics evidence. Distinguish monthly sales activity from latest-complete supply/procurement position. Never invent causes or values. If evidence is insufficient, say so. Use concise executive language and Indian rupee formatting. Return valid JSON with keys answer (string), highlights (array of up to 5 strings), and view (one of summary,outlets,menu,risks,procurement).\nReporting period: ${request.period}\nRecent conversation: ${JSON.stringify(history)}\nQuestion: ${request.message}\nGoverned evidence: ${JSON.stringify(evidence)}`;
   const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
     prompt,
@@ -264,7 +296,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url=new URL(request.url);
     if(request.method==="OPTIONS"){const origin=request.headers.get("Origin");if(origin&&origin!==FRONTEND_ORIGIN)return json(request,{message:"Origin not allowed."},403);return new Response(null,{status:204,headers:corsHeaders(request)});}
-    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.1.1"});}
+    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.1.2"});}
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
     if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
     if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
