@@ -1,5 +1,37 @@
 # Zoho Analytics PowerPoint Agent
 
+## MAJOSTech engineering policy
+
+- MAJOSTech is a Cloudflare-first product ecosystem. Prefer Workers, Pages, Workers AI, KV, D1, R2, Queues, Workflows, Durable Objects, Vectorize, and other Cloudflare-native services when technically appropriate.
+- GitHub is the source of truth for code, configuration templates, documentation, ADRs, and deployment workflows.
+- Before modifying an application, identify the target app and read its `README.md`, `PROJECT_STATE.md` or relevant state file, applicable `AGENTS.md`, and relevant documents under `docs/decisions/`.
+- Keep development, staging, and production configuration and resources separate. Never use production as a development environment.
+- Never commit secrets, credentials, OAuth tokens, private MCP URLs, cookies, or environment-specific secret values. Use Cloudflare secrets and GitHub encrypted secrets.
+- Do not introduce another cloud, database, application framework, or major dependency without documenting the technical reason, alternatives, operational impact, and exit path in an ADR.
+- Explain production-impacting changes before implementation and test them in proportion to risk before deployment.
+- Record significant architectural decisions in `docs/decisions/` and update `PROJECT_STATE.md` after meaningful work.
+
+## Standard project structure
+
+Use this structure unless an ADR documents a justified exception:
+
+```text
+/
+|-- README.md
+|-- AGENTS.md
+|-- PROJECT_STATE.md
+|-- .github/workflows/
+|-- backend/                 # Cloudflare Worker and server-side code
+|-- docs/                    # Static web app and architecture documentation
+|   `-- decisions/           # ADRs
+|-- config/                  # Non-secret, environment-neutral configuration
+|-- prompts/                 # Governed prompt examples/templates
+|-- output/                  # Local/generated artifacts; not published by default
+`-- tests/                   # Automated routing, contract and integration tests
+```
+
+Environment-specific identifiers belong in Wrangler environment configuration or deployment settings. Secret values belong only in managed secret stores.
+
 ## Mission
 
 Turn natural-language business questions into accurate, executive-ready PowerPoint presentations using live Zoho Analytics data.
@@ -43,9 +75,9 @@ Default story for an operating review:
 ## Accuracy rules
 
 - Never invent a KPI, target, trend, owner, or benchmark.
-- Do not label a metric as “good” or “bad” without an approved threshold or clearly identified management judgment.
+- Do not label a metric as â€œgoodâ€ or â€œbadâ€ without an approved threshold or clearly identified management judgment.
 - Prefer the latest valid and complete snapshot on or before the requested period end.
-- Preserve currency and unit conventions. For Indian executive reporting, use ₹, K, L, and Cr consistently when appropriate.
+- Preserve currency and unit conventions. For Indian executive reporting, use â‚¹, K, L, and Cr consistently when appropriate.
 - Do not mix gross margin, net margin, theoretical margin, or source-reported margin without explicit labels.
 - Do not present synthetic calibration tables as production data.
 - If a report view obscures calculation logic, inspect its parent query table and involved views.
@@ -67,3 +99,4 @@ For requests mentioning ABNAH without another workspace:
 - Dashboard context: `DB_01_ABNAH_SCM_Control_Tower`
 
 Use these defaults only as routing hints. Verify identifiers and current metadata through Zoho before analysis.
+
