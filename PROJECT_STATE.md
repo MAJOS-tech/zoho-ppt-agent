@@ -20,6 +20,7 @@ Last updated: 2026-08-14
 - January demo compatibility mapping from `2026-01` to `month_01`.
 - Compound outlet-margin plus inventory/PO exposure routing.
 - Editable PowerPoint generation from live Zoho data.
+- Repository governance records the MAJOSTech Cloudflare-first policy, GitHub source-of-truth rule, standard structure, environment separation, secret handling, ADR requirements, and deployment-test expectations.
 
 ## Known constraints
 
@@ -40,4 +41,5 @@ Last updated: 2026-08-14
 
 - [ADR 0001: Orchestrated domain specialists with persona-based framing](docs/decisions/0001-orchestrated-domain-specialists.md)
 - [ADR 0002: Canonical reporting periods for multi-month analytics](docs/decisions/0002-canonical-reporting-periods.md)
+- [ADR 0003: Cloudflare-first platform governance](docs/decisions/0003-cloudflare-first-platform-governance.md)
 
