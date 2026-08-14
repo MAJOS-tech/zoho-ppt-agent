@@ -41,13 +41,15 @@
           <button id="new-chat-button" class="text-button" type="button">New conversation</button>
         </div>
         <div id="chat-messages" class="chat-messages" aria-live="polite">
-          <div class="chat-message assistant"><b>Analytics agent</b><p>Ask about outlet performance, menu margin, supply risk, procurement exposure, or request a comparison for the selected reporting month.</p></div>
+          <div class="chat-message assistant"><b>Analytics agent</b><p>Select your role, then ask about outlet or menu performance, BOH inventory, kitchen consumption, waste and expiry, vendor service, price movement, or FOH menu availability.</p></div>
         </div>
         <div id="evidence-table" class="evidence-table" hidden></div>
         <form id="chat-form" class="chat-form">
+          <label class="role-field">Decision role<select id="chat-role"><option value="ceo">CEO</option><option value="coo" selected>COO</option><option value="procurement_manager">Procurement Manager</option><option value="executive_chef">Executive Chef</option><option value="outlet_manager">Outlet Manager</option><option value="finance">Finance Controller</option></select></label>
           <textarea id="chat-input" rows="2" required placeholder="Example: Which outlets need management attention in January 2026?"></textarea>
           <button id="ask-button" class="button primary" type="submit">Ask Zoho <span>â†’</span></button>
         </form>
+        <div id="question-starters" class="question-starters" aria-label="Suggested deep questions"></div>
         <div class="chat-actions"><button id="use-for-deck" class="button ghost" type="button" hidden>Use this question for a PowerPoint</button></div>
       </section>
 
