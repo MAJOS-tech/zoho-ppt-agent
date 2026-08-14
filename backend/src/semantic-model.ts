@@ -9,6 +9,16 @@ export const PERSONAS = {
 
 export type Persona = keyof typeof PERSONAS;
 
+export const DOMAIN_SPECIALISTS = {
+  commercial: { label: "Commercial Performance Agent", mandate: "sales, recipe margin, outlet and menu economics" },
+  inventory: { label: "Inventory & Availability Agent", mandate: "BOH stock, days cover, shortage, stockout and replenishment" },
+  consumption: { label: "Kitchen Control Agent", mandate: "actual versus theoretical usage, yield, portion and leakage signals" },
+  waste_expiry: { label: "Waste & Expiry Agent", mandate: "observed wastage, FIFO and clearly labelled estimated expiry exposure" },
+  procurement: { label: "Procurement Control Agent", mandate: "open PO, overdue liability, receipts and closure" },
+  vendor: { label: "Vendor Risk Agent", mandate: "OTIF, fill rate, lead time, price movement and alternate sourcing" },
+  foh: { label: "Menu Availability Agent", mandate: "ingredient risk translated into menu and FOH service exposure" },
+} as const;
+
 export const SEMANTIC_DOMAINS = {
   commercial: {
     label: "Commercial and menu economics",
@@ -48,7 +58,7 @@ export const SEMANTIC_DOMAINS = {
 } as const;
 
 export const QUESTION_STARTERS: Record<Persona, string[]> = {
-  ceo: ["Where are sales, margin, cash and supply risk concentrated this month?", "Which three risks require executive intervention and what value is exposed?", "Which outlets combine weak margin with high inventory or PO exposure?"],
+  ceo: ["Give me the overall position on sales, margin, BOH inventory and supply risk.", "Which three risks require executive intervention and what value is exposed?", "Which outlets combine weak margin with high inventory or PO exposure?"],
   coo: ["Which outlets need action on availability, leakage and waste?", "Where will ingredient shortages disrupt the most menu items?", "What should each outlet fix in the next 7 days?"],
   procurement_manager: ["Which vendors have the weakest OTIF, fill rate and lead-time performance?", "Which open POs are overdue and what supply or cash value is at risk?", "Where are purchase-price increases creating the largest value impact?"],
   executive_chef: ["Which ingredients show the largest actual-versus-theoretical consumption leakage?", "Which menu items are threatened by shortage or expiry?", "Where should recipe adherence, portion control or FIFO be checked first?"],
