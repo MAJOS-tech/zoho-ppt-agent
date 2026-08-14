@@ -7,7 +7,7 @@ The repository does not contain Zoho credentials, MCP URLs, OAuth tokens, or Ope
 ## What it does
 
 - Discovers Zoho Analytics organizations, workspaces, folders, tables, query tables, reports, and dashboards.
-- Converts questions such as “Create a January supply-chain executive deck” into a read-only analysis plan.
+- Converts questions such as â€œCreate a January supply-chain executive deckâ€ into a read-only analysis plan.
 - Validates reporting periods, grains, month-end versus period totals, units, and source lineage.
 - Builds editable `.pptx` presentations using the Codex Presentations workflow.
 - Renders every slide for visual QA before delivery.
@@ -55,12 +55,17 @@ send credentials from browser code.
 
 ```text
 zoho-ppt-agent/
-├── AGENTS.md
-├── README.md
-├── config/
-│   └── workspaces.json
-├── prompts/
-│   └── examples.md
-└── output/
-    └── .gitkeep
+â”œâ”€â”€ AGENTS.md
+â”œâ”€â”€ README.md
+â”œâ”€â”€ config/
+â”‚   â””â”€â”€ workspaces.json
+â”œâ”€â”€ prompts/
+â”‚   â””â”€â”€ examples.md
+â””â”€â”€ output/
+    â””â”€â”€ .gitkeep
 ```
+
+## Engineering governance
+
+MAJOSTech platform and repository rules are defined in [AGENTS.md](AGENTS.md). Architectural decisions are recorded under [docs/decisions](docs/decisions), and the deployed application state is maintained in [PROJECT_STATE.md](PROJECT_STATE.md). GitHub is the source of truth, and Cloudflare-native services are preferred where technically appropriate.
+
