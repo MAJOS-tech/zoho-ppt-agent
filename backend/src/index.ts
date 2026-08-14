@@ -77,6 +77,11 @@ function periodBounds(period: string): { start: string; end: string; label: stri
   return { start, end, label };
 }
 
+function sourcePeriodCode(period: string): string {
+  periodBounds(period);
+  return `month_${period.slice(5, 7)}`;
+}
+
 function validateDeckRequest(value: unknown): DeckRequest {
   if (!value || typeof value !== "object") throw new Error("Invalid request.");
   const body = value as Partial<DeckRequest>;
@@ -155,6 +160,7 @@ function csvRows(csv: string): Row[] {
 
 function queries(period: string): Record<string, string> {
   const { start, end } = periodBounds(period);
+  const sourcePeriod = sourcePeriodCode(period);
   const salesFilter = `WHERE "sales_date" >= '${start}' AND "sales_date" <= '${end}'`;
   return {
     summary: `SELECT ROUND(SUM("net_sales_value"),0) AS "net_sales", ROUND(SUM("menu_gross_margin"),0) AS "gross_margin", ROUND(100.0*SUM("menu_gross_margin")/NULLIF(SUM("net_sales_value"),0),1) AS "gross_margin_pct", COUNT(DISTINCT "outlet_name") AS "outlet_count", COUNT(DISTINCT "menu_item_code") AS "menu_count" FROM "QT_04_Menu_Profitability" ${salesFilter}`,
@@ -162,12 +168,12 @@ function queries(period: string): Record<string, string> {
     menu: `SELECT "menu_item_name" AS "menu_item", "outlet_name" AS "store", ROUND(SUM("net_sales_value"),0) AS "net_sales", ROUND(SUM("menu_gross_margin"),0) AS "gross_margin", ROUND(100.0*SUM("menu_gross_margin")/NULLIF(SUM("net_sales_value"),0),1) AS "gross_margin_pct", SUM("sold_menu_qty") AS "qty_sold" FROM "QT_04_Menu_Profitability" ${salesFilter} GROUP BY "menu_item_name", "outlet_name" ORDER BY "gross_margin" ASC LIMIT 12`,
     risks: `SELECT "outlet_name" AS "store", "item_name", "subject_type", "risk_color", ROUND(COALESCE("monetary_exposure",0),0) AS "exposure", ROUND(COALESCE("shortage_qty",0),2) AS "shortage_qty", "po_overdue_days", "impacted_menu_item_count" FROM "QT_02_Numerical_Risk_Center" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "risk_color" IN ('Red','Amber') ORDER BY "risk_priority_rank" ASC, COALESCE("monetary_exposure",0) DESC LIMIT 12`,
     procurement: `SELECT "outlet_name" AS "store", "vendor_name", ROUND(SUM(COALESCE("open_po_liability_pre_tax",0)),0) AS "open_liability", MAX("overdue_days") AS "max_overdue_days" FROM "QT_05_Procurement_Control" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "po_status" IN ('Open','Partially Received') GROUP BY "outlet_name", "vendor_name" ORDER BY "open_liability" DESC LIMIT 10`,
-    inventory: `SELECT "snapshot_date", "outlet_name" AS "store", "item_name", ROUND("current_stock_qty",2) AS "current_stock_qty", ROUND("days_cover",1) AS "days_cover", ROUND("shortage_qty",2) AS "shortage_qty", ROUND("total_risk_value",0) AS "risk_value", "risk_severity", "primary_vendor", "alternate_vendor", "recommended_action" FROM "27_fact_ct_inventory_risk.sql" WHERE "source_period_code"='${period}' ORDER BY "risk_severity_rank" DESC, "total_risk_value" DESC LIMIT 12`,
-    consumption: `SELECT "outlet_name" AS "store", "item_name", ROUND("actual_consumption_qty",2) AS "actual_qty", ROUND("theoretical_consumption_qty",2) AS "theoretical_qty", ROUND("variance_qty",2) AS "variance_qty", ROUND("leakage_value",0) AS "leakage_value" FROM "21_fact_ct_consumption_variance.sql" WHERE "source_period_code"='${period}' ORDER BY "leakage_value" DESC LIMIT 12`,
-    vendors: `SELECT "vendor_name", ROUND(SUM("monthly_purchase_value"),0) AS "purchase_value", ROUND(AVG("otif_percent"),1) AS "otif_pct", ROUND(AVG("fill_rate_percent"),1) AS "fill_rate_pct", ROUND(AVG("average_lead_time_deviation_days"),1) AS "lead_time_deviation_days", SUM("delayed_po_line_count") AS "delayed_lines" FROM "30_sum_ct_vendor_scorecard.sql" WHERE "source_period_code"='${period}' GROUP BY "vendor_name" ORDER BY "otif_pct" ASC, "purchase_value" DESC LIMIT 12`,
-    prices: `SELECT "vendor_name", "item_name", "outlet_name" AS "store", ROUND("current_unit_price",2) AS "current_unit_price", ROUND("previous_unit_price",2) AS "previous_unit_price", ROUND("price_change_percent",1) AS "price_change_pct", ROUND("price_change_value_impact",0) AS "value_impact" FROM "31_sum_ct_price_movement.sql" WHERE "source_period_code"='${period}' ORDER BY "value_impact" DESC LIMIT 12`,
-    expiry: `SELECT "as_of_date", "outlet_name" AS "store", "item_name", "vendor_name", ROUND("expiry_qty_at_risk",2) AS "qty_at_risk", "days_to_expiry", ROUND("expiry_risk_value",0) AS "risk_value", "expiry_batch_risk_status", "recommended_action", "is_estimated" FROM "38_fact_ct_expiry_risk.sql" WHERE "source_period_code"='${period}' ORDER BY "risk_severity_rank" DESC, "expiry_risk_value" DESC LIMIT 12`,
-    leakage: `SELECT "outlet_name" AS "store", "leakage_type", ROUND("leakage_value",0) AS "leakage_value", "evidence_type" FROM "35_sum_ct_financial_leakage.sql" WHERE "source_period_code"='${period}' ORDER BY "leakage_value" DESC LIMIT 12`,
+    inventory: `SELECT "snapshot_date", "outlet_name" AS "store", "item_name", ROUND("current_stock_qty",2) AS "current_stock_qty", ROUND("closing_value",0) AS "closing_stock_value", ROUND("open_po_value",0) AS "open_po_value", ROUND("days_cover",1) AS "days_cover", ROUND("shortage_qty",2) AS "shortage_qty", ROUND("total_risk_value",0) AS "risk_value", "risk_severity", "primary_vendor", "recommended_action" FROM "27_fact_ct_inventory_risk.sql" WHERE "source_period_code"='${sourcePeriod}' ORDER BY "risk_severity_rank" DESC, "total_risk_value" DESC LIMIT 12`,
+    consumption: `SELECT "outlet_name" AS "store", "item_name", ROUND("actual_consumption_qty",2) AS "actual_qty", ROUND("theoretical_consumption_qty",2) AS "theoretical_qty", ROUND("variance_qty",2) AS "variance_qty", ROUND("leakage_value",0) AS "leakage_value" FROM "21_fact_ct_consumption_variance.sql" WHERE "source_period_code"='${sourcePeriod}' ORDER BY "leakage_value" DESC LIMIT 12`,
+    vendors: `SELECT "vendor_name", ROUND(SUM("monthly_purchase_value"),0) AS "purchase_value", ROUND(AVG("otif_percent"),1) AS "otif_pct", ROUND(AVG("fill_rate_percent"),1) AS "fill_rate_pct", ROUND(AVG("average_lead_time_deviation_days"),1) AS "lead_time_deviation_days", SUM("delayed_po_line_count") AS "delayed_lines" FROM "30_sum_ct_vendor_scorecard.sql" WHERE "source_period_code"='${sourcePeriod}' GROUP BY "vendor_name" ORDER BY "otif_pct" ASC, "purchase_value" DESC LIMIT 12`,
+    prices: `SELECT "vendor_name", "item_name", "outlet_name" AS "store", ROUND("current_unit_price",2) AS "current_unit_price", ROUND("previous_unit_price",2) AS "previous_unit_price", ROUND("price_change_percent",1) AS "price_change_pct", ROUND("price_change_value_impact",0) AS "value_impact" FROM "31_sum_ct_price_movement.sql" WHERE "source_period_code"='${sourcePeriod}' ORDER BY "value_impact" DESC LIMIT 12`,
+    expiry: `SELECT "as_of_date", "outlet_name" AS "store", "item_name", "vendor_name", ROUND("expiry_qty_at_risk",2) AS "qty_at_risk", "days_to_expiry", ROUND("expiry_risk_value",0) AS "risk_value", "expiry_batch_risk_status", "recommended_action", "is_estimated" FROM "38_fact_ct_expiry_risk.sql" WHERE "source_period_code"='${sourcePeriod}' ORDER BY "risk_severity_rank" DESC, "expiry_risk_value" DESC LIMIT 12`,
+    leakage: `SELECT "outlet_name" AS "store", "leakage_type", ROUND("leakage_value",0) AS "leakage_value", "evidence_type" FROM "35_sum_ct_financial_leakage.sql" WHERE "source_period_code"='${sourcePeriod}' ORDER BY "leakage_value" DESC LIMIT 12`,
   };
 }
 
@@ -199,6 +205,7 @@ function routeQuestion(message: string, role: Persona): QuestionRoute {
   const wantsFoh = /foh|front of house|service|counter|guest|menu unavailable|lost sales/.test(text);
   const wantsSummary = /summary|overall|total|business|company/.test(text);
   const wantsControlTower = /supply chain|control tower|enterprise position|complete position|all risk/.test(text);
+  const wantsOutletExposureComparison = wantsOutlet && (wantsInventory || wantsProcurement) && /margin|combine|compare|exposure|working capital/.test(text);
   const domains: string[] = [];
   if (wantsInventory) domains.push("inventory"); if (wantsConsumption) domains.push("consumption");
   if (wantsExpiry || wantsWaste) domains.push("waste_expiry"); if (wantsProcurement) domains.push("procurement");
@@ -206,7 +213,8 @@ function routeQuestion(message: string, role: Persona): QuestionRoute {
   if (wantsMenu || wantsSummary || wantsOutlet || wantsControlTower) domains.push("commercial");
   if (wantsControlTower) domains.push("inventory", "procurement", "vendor", "waste_expiry");
   let views: EvidenceView[];
-  if (wantsConsumption) views = ["consumption", wantsWaste ? "leakage" : "outlets"];
+  if (wantsOutletExposureComparison) views = ["outlets", "inventory"];
+  else if (wantsConsumption) views = ["consumption", wantsWaste ? "leakage" : "outlets"];
   else if (wantsExpiry) views = ["expiry", wantsMenu || wantsFoh ? "risks" : "inventory"];
   else if (wantsVendor) views = ["vendors", wantsProcurement ? "procurement" : "prices"];
   else if (wantsPrice) views = ["prices", "vendors"];
@@ -331,7 +339,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url=new URL(request.url);
     if(request.method==="OPTIONS"){const origin=request.headers.get("Origin");if(origin&&origin!==FRONTEND_ORIGIN)return json(request,{message:"Origin not allowed."},403);return new Response(null,{status:204,headers:corsHeaders(request)});}
-    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.2.1"});}
+    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.2.2"});}
     if(request.method==="GET"&&url.pathname==="/api/semantic-model")return json(request,{personas:PERSONAS,domains:SEMANTIC_DOMAINS,specialists:DOMAIN_SPECIALISTS,questionStarters:QUESTION_STARTERS,version:"1.1"});
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
     if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
