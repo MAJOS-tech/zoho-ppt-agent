@@ -1,5 +1,5 @@
 import PptxGenJS from "pptxgenjs";
-import { PERSONAS, QUESTION_STARTERS, SEMANTIC_DOMAINS, personaFrom, type Persona } from "./semantic-model";
+import { DOMAIN_SPECIALISTS, PERSONAS, QUESTION_STARTERS, SEMANTIC_DOMAINS, personaFrom, type Persona } from "./semantic-model";
 
 const FRONTEND_ORIGIN = "https://majos-tech.github.io";
 const FRONTEND_URL = "https://majos-tech.github.io/zoho-ppt-agent/";
@@ -182,7 +182,7 @@ async function loadDeckData(env: Env, period: string): Promise<DeckData> {
 
 type EvidenceView = "summary" | "outlets" | "menu" | "risks" | "procurement" | "inventory" | "consumption" | "vendors" | "prices" | "expiry" | "leakage";
 
-type QuestionRoute = { role: Persona; domains: string[]; views: EvidenceView[] };
+type QuestionRoute = { role: Persona; domains: string[]; views: EvidenceView[]; specialists: string[] };
 
 function routeQuestion(message: string, role: Persona): QuestionRoute {
   const text = message.toLowerCase();
@@ -198,11 +198,13 @@ function routeQuestion(message: string, role: Persona): QuestionRoute {
   const wantsPrice = /price|rate|inflation|cost increase|cost movement/.test(text);
   const wantsFoh = /foh|front of house|service|counter|guest|menu unavailable|lost sales/.test(text);
   const wantsSummary = /summary|overall|total|business|company/.test(text);
+  const wantsControlTower = /supply chain|control tower|enterprise position|complete position|all risk/.test(text);
   const domains: string[] = [];
   if (wantsInventory) domains.push("inventory"); if (wantsConsumption) domains.push("consumption");
   if (wantsExpiry || wantsWaste) domains.push("waste_expiry"); if (wantsProcurement) domains.push("procurement");
   if (wantsVendor || wantsPrice) domains.push("vendor"); if (wantsFoh) domains.push("foh");
-  if (wantsMenu || wantsSummary || wantsOutlet) domains.push("commercial");
+  if (wantsMenu || wantsSummary || wantsOutlet || wantsControlTower) domains.push("commercial");
+  if (wantsControlTower) domains.push("inventory", "procurement", "vendor", "waste_expiry");
   let views: EvidenceView[];
   if (wantsConsumption) views = ["consumption", wantsWaste ? "leakage" : "outlets"];
   else if (wantsExpiry) views = ["expiry", wantsMenu || wantsFoh ? "risks" : "inventory"];
@@ -210,14 +212,16 @@ function routeQuestion(message: string, role: Persona): QuestionRoute {
   else if (wantsPrice) views = ["prices", "vendors"];
   else if (wantsInventory) views = ["inventory", wantsMenu || wantsFoh ? "risks" : "summary"];
   else if (wantsWaste) views = ["leakage", "consumption"];
+  else if (wantsControlTower && role === "ceo") views = ["summary", "inventory"];
   else if (wantsOutlet && wantsRisk) views = ["outlets", "risks"];
   else if (wantsMenu && wantsRisk) views = ["menu", "risks"];
   else if (wantsProcurement) views = ["procurement", wantsRisk ? "risks" : "summary"];
   else if (wantsMenu) views = ["menu", "summary"];
   else if (wantsRisk) views = ["risks", role === "procurement_manager" ? "procurement" : "summary"];
   else if (wantsOutlet) views = ["outlets", "summary"];
-  else views = role === "executive_chef" ? ["consumption", "inventory"] : role === "procurement_manager" ? ["vendors", "procurement"] : ["summary", "outlets"];
-  return { role, domains: [...new Set(domains.length ? domains : ["commercial"])], views: [...new Set(views)].slice(0, 2) };
+  else views = role === "executive_chef" ? ["consumption", "inventory"] : role === "procurement_manager" ? ["vendors", "procurement"] : role === "ceo" ? ["summary", "inventory"] : ["summary", "outlets"];
+  const selectedDomains = [...new Set(domains.length ? domains : role === "ceo" ? ["commercial", "inventory"] : ["commercial"])];
+  return { role, domains: selectedDomains, views: [...new Set(views)].slice(0, 2), specialists: selectedDomains.map(name => DOMAIN_SPECIALISTS[name as keyof typeof DOMAIN_SPECIALISTS]?.label).filter(Boolean) };
 }
 
 async function loadChatEvidence(env: Env, period: string, route: QuestionRoute): Promise<Partial<Record<EvidenceView, Row[]>>> {
@@ -257,7 +261,7 @@ function parseAiAnswer(text: string): ChatAnswer {
   return parsed;
 }
 
-async function answerQuestion(env: Env, request: ChatRequest, session: string): Promise<{ conversationId: string; answer: ChatAnswer; rows: Row[]; columns: string[]; period: string; role: Persona; domains: string[] }> {
+async function answerQuestion(env: Env, request: ChatRequest, session: string): Promise<{ conversationId: string; answer: ChatAnswer; rows: Row[]; columns: string[]; period: string; role: Persona; domains: string[]; specialists: string[] }> {
   const conversationId = request.conversationId ?? crypto.randomUUID();
   const historyKey = `chat:${session}:${conversationId}`;
   const history = (await env.PPT_AGENT_JOBS.get<ChatTurn[]>(historyKey, "json") ?? []).slice(-6);
@@ -265,8 +269,9 @@ async function answerQuestion(env: Env, request: ChatRequest, session: string): 
   const evidence = await loadChatEvidence(env, request.period, route);
   const definitions = route.domains.map(name => ({ domain: name, ...(SEMANTIC_DOMAINS[name as keyof typeof SEMANTIC_DOMAINS] ?? {}) }));
   const prompt = `You are the governed ABNAH QSR supply-chain analytics agent. Answer for the ${PERSONAS[route.role].label}; prioritize ${PERSONAS[route.role].lens}. Answer only from supplied Zoho evidence. Treat source_period_code as a reporting period and snapshot/as_of fields as point-in-time. Never invent causes, targets or values. Distinguish observed, calculated and estimated evidence. Consumption variance is a control signal, not proof of theft. FOH service impact is supported only through menu-item impact; if guest metrics are requested, disclose the gap. Use concise Indian business English and rupee formatting. Return one valid JSON object with: answer (string), highlights (up to 5), actions (up to 5, each with owner and timing where evidence supports it), caveats (up to 3), followUps (up to 3), and view (exactly one of ${route.views.join(",")}).\nReporting period: ${request.period}\nPersona: ${JSON.stringify(PERSONAS[route.role])}\nSemantic definitions: ${JSON.stringify(definitions)}\nRecent conversation: ${JSON.stringify(history)}\nQuestion: ${request.message}\nGoverned evidence: ${JSON.stringify(evidence)}`;
+  const orchestratedPrompt = `The persona controls framing, never data access. Act as an orchestrator and synthesize these consulted specialists: ${route.specialists.join(", ")}. Identify cross-domain dependencies in one answer.\n${prompt}`;
   const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
-    prompt,
+    prompt: orchestratedPrompt,
     max_tokens: 900,
     temperature: 0.15,
     response_format: { type: "json_object" },
@@ -277,7 +282,7 @@ async function answerQuestion(env: Env, request: ChatRequest, session: string): 
   const columns = rows.length ? Object.keys(rows[0]).slice(0, 7) : [];
   const nextHistory: ChatTurn[] = [...history, { role: "user", content: request.message }, { role: "assistant", content: answer.answer }].slice(-8);
   await env.PPT_AGENT_JOBS.put(historyKey, JSON.stringify(nextHistory), { expirationTtl: SESSION_TTL });
-  return { conversationId, answer: { ...answer, view }, rows, columns, period: request.period, role: route.role, domains: route.domains };
+  return { conversationId, answer: { ...answer, view }, rows, columns, period: request.period, role: route.role, domains: route.domains, specialists: route.specialists };
 }
 
 const n = (value: string | undefined) => Number(value || 0);
@@ -326,8 +331,8 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url=new URL(request.url);
     if(request.method==="OPTIONS"){const origin=request.headers.get("Origin");if(origin&&origin!==FRONTEND_ORIGIN)return json(request,{message:"Origin not allowed."},403);return new Response(null,{status:204,headers:corsHeaders(request)});}
-    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.2.0"});}
-    if(request.method==="GET"&&url.pathname==="/api/semantic-model")return json(request,{personas:PERSONAS,domains:SEMANTIC_DOMAINS,questionStarters:QUESTION_STARTERS,version:"1.0"});
+    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.2.1"});}
+    if(request.method==="GET"&&url.pathname==="/api/semantic-model")return json(request,{personas:PERSONAS,domains:SEMANTIC_DOMAINS,specialists:DOMAIN_SPECIALISTS,questionStarters:QUESTION_STARTERS,version:"1.1"});
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
     if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
     if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
