@@ -13,6 +13,8 @@ const chatMessages = document.querySelector("#chat-messages");
 const evidenceTable = document.querySelector("#evidence-table");
 const askButton = document.querySelector("#ask-button");
 const useForDeck = document.querySelector("#use-for-deck");
+const chatRole = document.querySelector("#chat-role");
+const questionStarters = document.querySelector("#question-starters");
 let conversationId = sessionStorage.getItem("zohoConversationId") || "";
 let lastQuestion = "";
 
@@ -60,12 +62,18 @@ connectButton.addEventListener("click", () => { window.location.href = `${API}/a
 document.querySelector("#new-chat-button").addEventListener("click", () => { conversationId = ""; sessionStorage.removeItem("zohoConversationId"); chatMessages.innerHTML = '<div class="chat-message assistant"><b>Analytics agent</b><p>New conversation started. What would you like to know?</p></div>'; evidenceTable.hidden = true; useForDeck.hidden = true; });
 useForDeck.addEventListener("click", () => { document.querySelector("#prompt").value = lastQuestion; document.querySelector("#deck-form").scrollIntoView({ behavior: "smooth" }); });
 
-function addChat(role, text, highlights = []) {
+function addChat(role, text, highlights = [], actions = [], caveats = [], followUps = []) {
   const item = document.createElement("div"); item.className = `chat-message ${role}`;
   const label = document.createElement("b"); label.textContent = role === "user" ? "You" : "Analytics agent";
   const copy = document.createElement("p"); copy.textContent = text; item.append(label, copy);
   if (highlights.length) { const list = document.createElement("ul"); list.className = "chat-highlights"; highlights.forEach(value => { const li = document.createElement("li"); li.textContent = value; list.append(li); }); item.append(list); }
+  [["Recommended actions", actions], ["Evidence notes", caveats], ["Ask next", followUps]].forEach(([title, values]) => { if (!values?.length) return; const heading = document.createElement("strong"); heading.className = "chat-subhead"; heading.textContent = title; const list = document.createElement("ul"); list.className = "chat-highlights"; values.forEach(value => { const li = document.createElement("li"); li.textContent = value; if (title === "Ask next") { li.className = "follow-up"; li.addEventListener("click", () => { chatInput.value = value; chatInput.focus(); }); } list.append(li); }); item.append(heading, list); });
   chatMessages.append(item); chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function loadSemanticModel() {
+  try { const model = await api("/api/semantic-model"); const render = () => { questionStarters.replaceChildren(); (model.questionStarters?.[chatRole.value] || []).forEach(value => { const button = document.createElement("button"); button.type = "button"; button.textContent = value; button.addEventListener("click", () => { chatInput.value = value; chatInput.focus(); }); questionStarters.append(button); }); }; chatRole.addEventListener("change", render); render(); }
+  catch { questionStarters.hidden = true; }
 }
 
 function showEvidence(columns, rows) {
@@ -80,11 +88,12 @@ chatForm.addEventListener("submit", async event => {
   event.preventDefault(); const message = chatInput.value.trim(); if (!message) return;
   lastQuestion = message; addChat("user", message); chatInput.value = ""; askButton.disabled = true; askButton.textContent = "Analyzingâ€¦";
   try {
-    const result = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, period: document.querySelector("#period").value, conversationId: conversationId || undefined }) });
-    conversationId = result.conversationId; sessionStorage.setItem("zohoConversationId", conversationId); addChat("assistant", result.answer.answer, result.answer.highlights || []); showEvidence(result.columns, result.rows); useForDeck.hidden = false;
+    const result = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, period: document.querySelector("#period").value, role: chatRole.value, conversationId: conversationId || undefined }) });
+    conversationId = result.conversationId; sessionStorage.setItem("zohoConversationId", conversationId); addChat("assistant", result.answer.answer, result.answer.highlights || [], result.answer.actions || [], result.answer.caveats || [], result.answer.followUps || []); showEvidence(result.columns, result.rows); useForDeck.hidden = false;
   } catch (error) { addChat("assistant", error.message); if (error.status === 401) setStatus("waiting", "Connect Zoho"); }
   finally { askButton.disabled = false; askButton.innerHTML = "Ask Zoho <span>â†’</span>"; }
 });
+loadSemanticModel();
 document.querySelector("#clear-button").addEventListener("click", () => { document.querySelector("#prompt").value = ""; document.querySelector("#prompt").focus(); });
 document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => { document.querySelector("#prompt").value = button.dataset.prompt; document.querySelector("#prompt").focus(); }));
 
