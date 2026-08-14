@@ -1,4 +1,5 @@
 import PptxGenJS from "pptxgenjs";
+import { PERSONAS, QUESTION_STARTERS, SEMANTIC_DOMAINS, personaFrom, type Persona } from "./semantic-model";
 
 const FRONTEND_ORIGIN = "https://majos-tech.github.io";
 const FRONTEND_URL = "https://majos-tech.github.io/zoho-ppt-agent/";
@@ -15,9 +16,9 @@ type DeckRequest = { prompt: string; workspace: string; period: string; audience
 type Job = { status: "queued" | "running" | "complete" | "failed"; stage: "analyze" | "story" | "render"; message: string; fileName?: string; downloadUrl?: string };
 type Row = Record<string, string>;
 type DeckData = { summary: Row[]; outlets: Row[]; menu: Row[]; risks: Row[]; procurement: Row[]; period: string; generatedAt: string };
-type ChatRequest = { message: string; period: string; conversationId?: string };
+type ChatRequest = { message: string; period: string; conversationId?: string; role: Persona };
 type ChatTurn = { role: "user" | "assistant"; content: string };
-type ChatAnswer = { answer: string; highlights?: string[]; view?: "summary" | "outlets" | "menu" | "risks" | "procurement" };
+type ChatAnswer = { answer: string; highlights?: string[]; actions?: string[]; caveats?: string[]; followUps?: string[]; view?: EvidenceView };
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin");
@@ -161,6 +162,12 @@ function queries(period: string): Record<string, string> {
     menu: `SELECT "menu_item_name" AS "menu_item", "outlet_name" AS "store", ROUND(SUM("net_sales_value"),0) AS "net_sales", ROUND(SUM("menu_gross_margin"),0) AS "gross_margin", ROUND(100.0*SUM("menu_gross_margin")/NULLIF(SUM("net_sales_value"),0),1) AS "gross_margin_pct", SUM("sold_menu_qty") AS "qty_sold" FROM "QT_04_Menu_Profitability" ${salesFilter} GROUP BY "menu_item_name", "outlet_name" ORDER BY "gross_margin" ASC LIMIT 12`,
     risks: `SELECT "outlet_name" AS "store", "item_name", "subject_type", "risk_color", ROUND(COALESCE("monetary_exposure",0),0) AS "exposure", ROUND(COALESCE("shortage_qty",0),2) AS "shortage_qty", "po_overdue_days", "impacted_menu_item_count" FROM "QT_02_Numerical_Risk_Center" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "risk_color" IN ('Red','Amber') ORDER BY "risk_priority_rank" ASC, COALESCE("monetary_exposure",0) DESC LIMIT 12`,
     procurement: `SELECT "outlet_name" AS "store", "vendor_name", ROUND(SUM(COALESCE("open_po_liability_pre_tax",0)),0) AS "open_liability", MAX("overdue_days") AS "max_overdue_days" FROM "QT_05_Procurement_Control" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "po_status" IN ('Open','Partially Received') GROUP BY "outlet_name", "vendor_name" ORDER BY "open_liability" DESC LIMIT 10`,
+    inventory: `SELECT "snapshot_date", "outlet_name" AS "store", "item_name", ROUND("current_stock_qty",2) AS "current_stock_qty", ROUND("days_cover",1) AS "days_cover", ROUND("shortage_qty",2) AS "shortage_qty", ROUND("total_risk_value",0) AS "risk_value", "risk_severity", "primary_vendor", "alternate_vendor", "recommended_action" FROM "27_fact_ct_inventory_risk.sql" WHERE "source_period_code"='${period}' ORDER BY "risk_severity_rank" DESC, "total_risk_value" DESC LIMIT 12`,
+    consumption: `SELECT "outlet_name" AS "store", "item_name", ROUND("actual_consumption_qty",2) AS "actual_qty", ROUND("theoretical_consumption_qty",2) AS "theoretical_qty", ROUND("variance_qty",2) AS "variance_qty", ROUND("leakage_value",0) AS "leakage_value" FROM "21_fact_ct_consumption_variance.sql" WHERE "source_period_code"='${period}' ORDER BY "leakage_value" DESC LIMIT 12`,
+    vendors: `SELECT "vendor_name", ROUND(SUM("monthly_purchase_value"),0) AS "purchase_value", ROUND(AVG("otif_percent"),1) AS "otif_pct", ROUND(AVG("fill_rate_percent"),1) AS "fill_rate_pct", ROUND(AVG("average_lead_time_deviation_days"),1) AS "lead_time_deviation_days", SUM("delayed_po_line_count") AS "delayed_lines" FROM "30_sum_ct_vendor_scorecard.sql" WHERE "source_period_code"='${period}' GROUP BY "vendor_name" ORDER BY "otif_pct" ASC, "purchase_value" DESC LIMIT 12`,
+    prices: `SELECT "vendor_name", "item_name", "outlet_name" AS "store", ROUND("current_unit_price",2) AS "current_unit_price", ROUND("previous_unit_price",2) AS "previous_unit_price", ROUND("price_change_percent",1) AS "price_change_pct", ROUND("price_change_value_impact",0) AS "value_impact" FROM "31_sum_ct_price_movement.sql" WHERE "source_period_code"='${period}' ORDER BY "value_impact" DESC LIMIT 12`,
+    expiry: `SELECT "as_of_date", "outlet_name" AS "store", "item_name", "vendor_name", ROUND("expiry_qty_at_risk",2) AS "qty_at_risk", "days_to_expiry", ROUND("expiry_risk_value",0) AS "risk_value", "expiry_batch_risk_status", "recommended_action", "is_estimated" FROM "38_fact_ct_expiry_risk.sql" WHERE "source_period_code"='${period}' ORDER BY "risk_severity_rank" DESC, "expiry_risk_value" DESC LIMIT 12`,
+    leakage: `SELECT "outlet_name" AS "store", "leakage_type", ROUND("leakage_value",0) AS "leakage_value", "evidence_type" FROM "35_sum_ct_financial_leakage.sql" WHERE "source_period_code"='${period}' ORDER BY "leakage_value" DESC LIMIT 12`,
   };
 }
 
@@ -173,32 +180,51 @@ async function loadDeckData(env: Env, period: string): Promise<DeckData> {
   return { summary: result.summary ?? [], outlets: result.outlets ?? [], menu: result.menu ?? [], risks: result.risks ?? [], procurement: result.procurement ?? [], period, generatedAt: new Date().toISOString() };
 }
 
-type EvidenceView = "summary" | "outlets" | "menu" | "risks" | "procurement";
+type EvidenceView = "summary" | "outlets" | "menu" | "risks" | "procurement" | "inventory" | "consumption" | "vendors" | "prices" | "expiry" | "leakage";
 
-function chatEvidenceViews(message: string): EvidenceView[] {
+type QuestionRoute = { role: Persona; domains: string[]; views: EvidenceView[] };
+
+function routeQuestion(message: string, role: Persona): QuestionRoute {
   const text = message.toLowerCase();
   const wantsOutlet = /outlet|store|location|branch/.test(text);
-  const wantsRisk = /risk|shortage|expiry|expired|exposure|stock/.test(text);
+  const wantsInventory = /boh|back of house|back kitchen|store room|stock|inventory|soh|on hand|days cover|stockout|out of stock|shortage|reorder/.test(text);
+  const wantsConsumption = /actual consumption|theoretical consumption|ideal usage|recipe usage|variance|overconsumption|yield|portion|recipe adherence|food cost variance/.test(text);
+  const wantsExpiry = /expiry|expired|near expiry|shelf life|fifo|slow moving|dead stock/.test(text);
+  const wantsWaste = /waste|wastage|spoilage/.test(text);
+  const wantsRisk = /risk|exposure|attention|priority/.test(text);
   const wantsMenu = /menu|dish|recipe|food item|item margin/.test(text);
   const wantsProcurement = /procurement|vendor|supplier|purchase order|\bpo\b|overdue/.test(text);
+  const wantsVendor = /vendor|supplier|otif|on time in full|fill rate|lead time|alternate source/.test(text);
+  const wantsPrice = /price|rate|inflation|cost increase|cost movement/.test(text);
+  const wantsFoh = /foh|front of house|service|counter|guest|menu unavailable|lost sales/.test(text);
   const wantsSummary = /summary|overall|total|business|company/.test(text);
-
-  if (wantsOutlet && wantsRisk) return ["outlets", "risks"];
-  if (wantsMenu && wantsRisk) return ["menu", "risks"];
-  if (wantsProcurement) return wantsRisk ? ["procurement", "risks"] : ["procurement", "summary"];
-  if (wantsMenu) return ["menu", "summary"];
-  if (wantsRisk) return ["risks", "summary"];
-  if (wantsOutlet) return ["outlets", "summary"];
-  if (wantsSummary) return ["summary", "outlets"];
-  return ["summary", "outlets"];
+  const domains: string[] = [];
+  if (wantsInventory) domains.push("inventory"); if (wantsConsumption) domains.push("consumption");
+  if (wantsExpiry || wantsWaste) domains.push("waste_expiry"); if (wantsProcurement) domains.push("procurement");
+  if (wantsVendor || wantsPrice) domains.push("vendor"); if (wantsFoh) domains.push("foh");
+  if (wantsMenu || wantsSummary || wantsOutlet) domains.push("commercial");
+  let views: EvidenceView[];
+  if (wantsConsumption) views = ["consumption", wantsWaste ? "leakage" : "outlets"];
+  else if (wantsExpiry) views = ["expiry", wantsMenu || wantsFoh ? "risks" : "inventory"];
+  else if (wantsVendor) views = ["vendors", wantsProcurement ? "procurement" : "prices"];
+  else if (wantsPrice) views = ["prices", "vendors"];
+  else if (wantsInventory) views = ["inventory", wantsMenu || wantsFoh ? "risks" : "summary"];
+  else if (wantsWaste) views = ["leakage", "consumption"];
+  else if (wantsOutlet && wantsRisk) views = ["outlets", "risks"];
+  else if (wantsMenu && wantsRisk) views = ["menu", "risks"];
+  else if (wantsProcurement) views = ["procurement", wantsRisk ? "risks" : "summary"];
+  else if (wantsMenu) views = ["menu", "summary"];
+  else if (wantsRisk) views = ["risks", role === "procurement_manager" ? "procurement" : "summary"];
+  else if (wantsOutlet) views = ["outlets", "summary"];
+  else views = role === "executive_chef" ? ["consumption", "inventory"] : role === "procurement_manager" ? ["vendors", "procurement"] : ["summary", "outlets"];
+  return { role, domains: [...new Set(domains.length ? domains : ["commercial"])], views: [...new Set(views)].slice(0, 2) };
 }
 
-async function loadChatEvidence(env: Env, period: string, message: string): Promise<Record<EvidenceView, Row[]>> {
+async function loadChatEvidence(env: Env, period: string, route: QuestionRoute): Promise<Partial<Record<EvidenceView, Row[]>>> {
   const token = await accessToken(env);
   const sql = queries(period);
-  const selected = chatEvidenceViews(message);
-  const loaded = await Promise.all(selected.map(async (view) => [view, csvRows(await exportSql(env, token, sql[view]))] as const));
-  const evidence: Record<EvidenceView, Row[]> = { summary: [], outlets: [], menu: [], risks: [], procurement: [] };
+  const loaded = await Promise.all(route.views.map(async (view) => [view, csvRows(await exportSql(env, token, sql[view]))] as const));
+  const evidence: Partial<Record<EvidenceView, Row[]>> = {};
   for (const [view, rows] of loaded) evidence[view] = rows;
   return evidence;
 }
@@ -209,7 +235,7 @@ function validateChatRequest(value: unknown): ChatRequest {
   const message = String(body.message ?? "").trim();
   if (message.length < 3 || message.length > 1500) throw new Error("Question must be between 3 and 1,500 characters.");
   periodBounds(String(body.period ?? ""));
-  return { message, period: String(body.period), conversationId: body.conversationId ? String(body.conversationId).slice(0, 80) : undefined };
+  return { message, period: String(body.period), conversationId: body.conversationId ? String(body.conversationId).slice(0, 80) : undefined, role: personaFrom(body.role, message) };
 }
 
 function aiText(result: unknown): string {
@@ -225,16 +251,20 @@ function parseAiAnswer(text: string): ChatAnswer {
   const parsed = JSON.parse(cleaned.slice(start, end + 1)) as ChatAnswer;
   if (!parsed || typeof parsed.answer !== "string" || !parsed.answer.trim()) throw new Error("The AI response could not be validated.");
   parsed.highlights = Array.isArray(parsed.highlights) ? parsed.highlights.filter(value => typeof value === "string").slice(0, 5) : [];
+  parsed.actions = Array.isArray(parsed.actions) ? parsed.actions.filter(value => typeof value === "string").slice(0, 5) : [];
+  parsed.caveats = Array.isArray(parsed.caveats) ? parsed.caveats.filter(value => typeof value === "string").slice(0, 3) : [];
+  parsed.followUps = Array.isArray(parsed.followUps) ? parsed.followUps.filter(value => typeof value === "string").slice(0, 3) : [];
   return parsed;
 }
 
-async function answerQuestion(env: Env, request: ChatRequest, session: string): Promise<{ conversationId: string; answer: ChatAnswer; rows: Row[]; columns: string[]; period: string }> {
+async function answerQuestion(env: Env, request: ChatRequest, session: string): Promise<{ conversationId: string; answer: ChatAnswer; rows: Row[]; columns: string[]; period: string; role: Persona; domains: string[] }> {
   const conversationId = request.conversationId ?? crypto.randomUUID();
   const historyKey = `chat:${session}:${conversationId}`;
   const history = (await env.PPT_AGENT_JOBS.get<ChatTurn[]>(historyKey, "json") ?? []).slice(-6);
-  const loaded = await loadChatEvidence(env, request.period, request.message);
-  const evidence = { summary: loaded.summary, outlets: loaded.outlets.slice(0, 12), menu: loaded.menu.slice(0, 12), risks: loaded.risks.slice(0, 12), procurement: loaded.procurement.slice(0, 10) };
-  const prompt = `You are the ABNAH executive analytics agent. Answer only from the supplied Zoho Analytics evidence. Distinguish monthly sales activity from latest-complete supply/procurement position. Never invent causes or values. If evidence is insufficient, say so. Use concise executive language and Indian rupee formatting. Return valid JSON with keys answer (string), highlights (array of up to 5 strings), and view (one of summary,outlets,menu,risks,procurement).\nReporting period: ${request.period}\nRecent conversation: ${JSON.stringify(history)}\nQuestion: ${request.message}\nGoverned evidence: ${JSON.stringify(evidence)}`;
+  const route = routeQuestion(request.message, request.role);
+  const evidence = await loadChatEvidence(env, request.period, route);
+  const definitions = route.domains.map(name => ({ domain: name, ...(SEMANTIC_DOMAINS[name as keyof typeof SEMANTIC_DOMAINS] ?? {}) }));
+  const prompt = `You are the governed ABNAH QSR supply-chain analytics agent. Answer for the ${PERSONAS[route.role].label}; prioritize ${PERSONAS[route.role].lens}. Answer only from supplied Zoho evidence. Treat source_period_code as a reporting period and snapshot/as_of fields as point-in-time. Never invent causes, targets or values. Distinguish observed, calculated and estimated evidence. Consumption variance is a control signal, not proof of theft. FOH service impact is supported only through menu-item impact; if guest metrics are requested, disclose the gap. Use concise Indian business English and rupee formatting. Return one valid JSON object with: answer (string), highlights (up to 5), actions (up to 5, each with owner and timing where evidence supports it), caveats (up to 3), followUps (up to 3), and view (exactly one of ${route.views.join(",")}).\nReporting period: ${request.period}\nPersona: ${JSON.stringify(PERSONAS[route.role])}\nSemantic definitions: ${JSON.stringify(definitions)}\nRecent conversation: ${JSON.stringify(history)}\nQuestion: ${request.message}\nGoverned evidence: ${JSON.stringify(evidence)}`;
   const result = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
     prompt,
     max_tokens: 900,
@@ -242,12 +272,12 @@ async function answerQuestion(env: Env, request: ChatRequest, session: string): 
     response_format: { type: "json_object" },
   });
   const answer = parseAiAnswer(aiText(result));
-  const view = ["summary", "outlets", "menu", "risks", "procurement"].includes(answer.view ?? "") ? answer.view! : "summary";
-  const rows = evidence[view].slice(0, 10);
+  const view = route.views.includes(answer.view as EvidenceView) ? answer.view as EvidenceView : route.views[0];
+  const rows = (evidence[view] ?? []).slice(0, 10);
   const columns = rows.length ? Object.keys(rows[0]).slice(0, 7) : [];
   const nextHistory: ChatTurn[] = [...history, { role: "user", content: request.message }, { role: "assistant", content: answer.answer }].slice(-8);
   await env.PPT_AGENT_JOBS.put(historyKey, JSON.stringify(nextHistory), { expirationTtl: SESSION_TTL });
-  return { conversationId, answer: { ...answer, view }, rows, columns, period: request.period };
+  return { conversationId, answer: { ...answer, view }, rows, columns, period: request.period, role: route.role, domains: route.domains };
 }
 
 const n = (value: string | undefined) => Number(value || 0);
@@ -296,7 +326,8 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url=new URL(request.url);
     if(request.method==="OPTIONS"){const origin=request.headers.get("Origin");if(origin&&origin!==FRONTEND_ORIGIN)return json(request,{message:"Origin not allowed."},403);return new Response(null,{status:204,headers:corsHeaders(request)});}
-    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.1.2"});}
+    if(request.method==="GET"&&url.pathname==="/health"){const refresh=await env.PPT_AGENT_ZOHO_TOKENS.get("refresh_token");const session=await hasSession(request,env);return json(request,{status:"ok",service:"zoho-ppt-agent",zoho:refresh&&session?"connected":refresh?"authorization_required":"not_connected",generation:"ready",version:"1.2.0"});}
+    if(request.method==="GET"&&url.pathname==="/api/semantic-model")return json(request,{personas:PERSONAS,domains:SEMANTIC_DOMAINS,questionStarters:QUESTION_STARTERS,version:"1.0"});
     if(request.method==="GET"&&(url.pathname==="/auth/zoho"||url.pathname==="/auth/zoho/start")){const state=crypto.randomUUID();const auth=new URL("/oauth/v2/auth",ZOHO_ACCOUNTS_URL);auth.search=new URLSearchParams({response_type:"code",client_id:env.ZOHO_CLIENT_ID,redirect_uri:callbackUrl(url),scope:ZOHO_SCOPE,access_type:"offline",prompt:"consent",state}).toString();return redirect(auth.toString(),[stateCookie(state,600)]);}
     if(request.method==="GET"&&url.pathname==="/auth/zoho/callback"){const code=url.searchParams.get("code"),state=url.searchParams.get("state"),expected=readCookie(request,OAUTH_STATE_COOKIE);if(!code||!state||!expected||state!==expected)return json(request,{message:"Invalid or expired Zoho authorization state."},400);const response=await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:callbackUrl(url),client_id:env.ZOHO_CLIENT_ID,client_secret:env.ZOHO_CLIENT_SECRET})});const token=await response.json<ZohoTokenResponse>();if(!response.ok||!token.refresh_token)return json(request,{message:"Zoho authorization did not return an offline refresh token."},502);await env.PPT_AGENT_ZOHO_TOKENS.put("refresh_token",token.refresh_token);const session=crypto.randomUUID();await env.PPT_AGENT_JOBS.put(`session:${session}`,"active",{expirationTtl:SESSION_TTL});const frontend=new URL(FRONTEND_URL);frontend.searchParams.set("zoho","connected");return redirect(frontend.toString(),[stateCookie("",0),sessionCookie(session,SESSION_TTL)]);}
     if(request.method==="POST"&&url.pathname==="/api/decks"){if(!(await hasSession(request,env)))return json(request,{message:"Connect Zoho in this browser before generating a presentation."},401);try{const body=validateDeckRequest(await request.json());const id=crypto.randomUUID();await putJob(env,id,{status:"queued",stage:"analyze",message:"Presentation request accepted."});ctx.waitUntil(runJob(env,id,body,url.origin));return json(request,{jobId:id},202);}catch(error){return json(request,{message:error instanceof Error?error.message:"Invalid request."},400);}}
